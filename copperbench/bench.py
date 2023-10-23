@@ -424,3 +424,4 @@ def main() -> None:
     print(f'Copperbench generated in total {num_tasks} task files.')
     print(f'...Run all on slurm by executing all "submit_all.sh" files.')
     print(f'...Test setup by executing one "start.sh" (e.g. "{job_path}")')
+    print(f'...Run all on local machine by executing all "standalone.py"')
