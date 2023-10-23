@@ -410,6 +410,13 @@ def main() -> None:
             with open(submit_sh_path, 'w') as fh:
                 fh.write(outputText)
 
+
+            standalone_runner = templateEnv.get_template('standalone.py')
+            outputText = standalone_runner.render()
+            standalone_runner_path = f'{os.path.dirname(submit_sh_path)}/standalone.py'
+            with open(standalone_runner_path, 'w') as fh:
+                fh.write(outputText)
+
             st = os.stat(submit_sh_path)
             os.chmod(submit_sh_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     if job_path is None or job_path == '':
