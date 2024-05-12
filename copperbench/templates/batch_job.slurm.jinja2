@@ -24,16 +24,18 @@
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 {%- endif %}
-{% if max_parallel_jobs is not none %}
+{%- if max_parallel_jobs is not none %}
 #SBATCH --array=1-{{ lstart_scripts }}%{{ max_parallel_jobs }}
 {%- else %}
 #SBATCH --array=1-{{ lstart_scripts }}
 {%- endif %}
+
 {%- if exclusive %}:
-#SBATCH --exclusive=user
+#SBATCH --exclusive
 {%- endif %}
 #SBATCH --ntasks=1
 
+
 cd ~/{{ bench_path }}
-start=$( awk "NR==$SLURM_ARRAY_TASK_ID" start_list.txt )
+start=$( awk "NR==$SLURM_ARRAY_TASK_ID" {{ start_list }} )
 srun $start

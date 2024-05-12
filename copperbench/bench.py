@@ -63,6 +63,7 @@ class BenchConfig:
     starexec_compatible: Optional[bool] = False
     python_conda_env: Optional[str] = None
     warn_large_task_num: Optional[bool] = True
+    chunks: Optional[int] = None
 
 
 def main() -> None:
@@ -114,6 +115,7 @@ def main() -> None:
     rs_time = bench_config.timeout + bench_config.slurm_time_buffer
     slurm_time = rs_time + bench_config.runsolver_kill_delay
     warn_large_task_num = bench_config.warn_large_task_num
+    chunks = bench_config.chunks
 
     for instanceset_name, instancelist_filename in instance_dict.items():
         if (instanceset_name.startswith("%") or instanceset_name.startswith("#") or
@@ -359,66 +361,95 @@ def main() -> None:
             with open(Path(bench_name_prefix, bench_config_name, instanceset_name, 'metadata.json'), 'w') as file:
                 file.write(json.dumps(metadata, indent=4))
 
-            with open(Path(bench_name_prefix, bench_config_name, instanceset_name, 'start_list.txt'), 'w') as file:
-                for p in start_scripts:
-                    # hack: if we have a prefix, we need to cut the first folder
-                    if bench_name_prefix != '':
-                        idx = str(p).find(bench_name_prefix)
-                        p = '/'.join(str(p).split('/')[1:])
-                    if bench_config_name:
-                        idx = str(p).find(bench_config_name)
-                        p = '/'.join(str(p).split('/')[1:])
-                    file.write(str(p) + '\n')
 
             bench_path = os.path.relpath(Path(bench_name_prefix, bench_config_name, instanceset_name), start=starthome)
-            slurm_template = templateEnv.get_template('batch_job.slurm.jinja2')
-            slurm_timeout = datetime.timedelta(seconds=slurm_time)
-            mem_per_cpu = int(math.ceil(bench_config.mem_limit / cpus))
-            min_freq = bench_config.cpu_freq * 1000
-            max_freq = bench_config.cpu_freq * 1000
             output_path = f"{os.environ['HOME']}/{os.path.relpath(os.path.abspath(bench_path))}/slurm_logs"
-            if not os.path.exists(output_path):
-                os.makedirs(output_path)
-            outputText = slurm_template.render(benchmark_name=instanceset_name, slurm_timeout=slurm_timeout,
-                                               partition=bench_config.partition, cpus_per_task=cpus,
-                                               mem_per_cpu=mem_per_cpu, email=bench_config.email,
-                                               account=bench_config.billing,
-                                               cache_pinning=bench_config.cache_pinning, cache_lines=cache_lines,
-                                               min_freq=min_freq, max_freq=max_freq,
-                                               write_scheduler_logs=bench_config.write_scheuler_logs,
-                                               output_path=output_path,
-                                               max_parallel_jobs=bench_config.max_parallel_jobs,
-                                               lstart_scripts=len(start_scripts), exclusive=bench_config.exclusive,
-                                               bench_path=bench_path)
-            with open(Path(bench_name_prefix, bench_config_name, instanceset_name, 'batch_job.slurm'), 'w') as fh:
-                fh.write(outputText)
 
-            compress_results_slurm = templateEnv.get_template('compress_results.slurm.jinja2')
-            outputText = compress_results_slurm.render(benchmark_name=instanceset_name, partition=bench_config.partition,
-                                                       bench_path=bench_path,
-                                                       dir_prefix=f"{bench_name_prefix}{bench_config_name}",
-                                                       write_scheduler_logs=bench_config.write_scheuler_logs,
-                                                       output_path=output_path)
-            with open(Path(bench_name_prefix,bench_config_name, instanceset_name, 'compress_results.slurm'),
-                      'w') as fh:
-                fh.write(outputText)
+            def write_startlist(fname, scripts):
+                with open(Path(bench_name_prefix, bench_config_name, instanceset_name, fname), 'w') as file:
+                    for p in scripts:
+                        # hack: if we have a prefix, we need to cut the first folder
+                        if bench_name_prefix != '':
+                            idx = str(p).find(bench_name_prefix)
+                            p = '/'.join(str(p).split('/')[1:])
+                        if bench_config_name:
+                            idx = str(p).find(bench_config_name)
+                            p = '/'.join(str(p).split('/')[1:])
+                        file.write(str(p) + '\n')
 
-            submit_sh_path = Path( bench_name_prefix, bench_config_name, instanceset_name, 'submit_all.sh')
-            submit_all = templateEnv.get_template('submit_all.sh.jinja2')
-            wd = os.path.relpath(Path(bench_name_prefix, bench_config_name, instanceset_name), start=starthome)
-            outputText = submit_all.render(wd=wd)
-            with open(submit_sh_path, 'w') as fh:
-                fh.write(outputText)
 
+            def write_slurm(fname, scripts, start_list):
+                slurm_template = templateEnv.get_template('batch_job.slurm.jinja2')
+                slurm_timeout = datetime.timedelta(seconds=slurm_time)
+                mem_per_cpu = int(math.ceil(bench_config.mem_limit / cpus))
+                min_freq = bench_config.cpu_freq * 1000
+                max_freq = bench_config.cpu_freq * 1000
+                if not os.path.exists(output_path):
+                    os.makedirs(output_path)
+                outputText = slurm_template.render(benchmark_name=instanceset_name, slurm_timeout=slurm_timeout,
+                                                   partition=bench_config.partition, cpus_per_task=cpus,
+                                                   mem_per_cpu=mem_per_cpu, email=bench_config.email,
+                                                   account=bench_config.billing,
+                                                   cache_pinning=bench_config.cache_pinning, cache_lines=cache_lines,
+                                                   min_freq=min_freq, max_freq=max_freq,
+                                                   write_scheduler_logs=bench_config.write_scheuler_logs,
+                                                   output_path=output_path,
+                                                   max_parallel_jobs=bench_config.max_parallel_jobs,
+                                                   lstart_scripts=len(scripts), exclusive=bench_config.exclusive,
+                                                   bench_path=bench_path,
+                                                   start_list=start_list)
+                with open(Path(bench_name_prefix, bench_config_name, instanceset_name, fname), 'w') as fh:
+                    fh.write(outputText)
+
+
+            def write_compress():
+                compress_results_slurm = templateEnv.get_template('compress_results.slurm.jinja2')
+                outputText = compress_results_slurm.render(benchmark_name=instanceset_name, partition=bench_config.partition,
+                                                           bench_path=bench_path,
+                                                           dir_prefix=f"{bench_name_prefix}{bench_config_name}",
+                                                           write_scheduler_logs=bench_config.write_scheuler_logs,
+                                                           output_path=output_path)
+                with open(Path(bench_name_prefix,bench_config_name, instanceset_name, 'compress_results.slurm'),
+                          'w') as fh:
+                    fh.write(outputText)
+
+            def write_submit(fname,batch_job,compress):
+                submit_sh_path = Path( bench_name_prefix, bench_config_name, instanceset_name, fname)
+                submit_all = templateEnv.get_template('submit_all.sh.jinja2')
+                wd = os.path.relpath(Path(bench_name_prefix, bench_config_name, instanceset_name), start=starthome)
+                outputText = submit_all.render(wd=wd, compress=compress,batch_job=batch_job)
+                with open(submit_sh_path, 'w') as fh:
+                    fh.write(outputText)
+                st = os.stat(submit_sh_path)
+                os.chmod(submit_sh_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+                
+                        
+            if chunks is None:
+                write_startlist('start_list.txt',start_scripts)
+                write_slurm('batch_job.slurm', start_scripts, 'start_list.txt')
+                write_compress()
+                write_submit('submit_all.sh','batch_job.slurm',True)
+            else:
+                n_split = math.ceil(len(start_scripts)/chunks)
+                for i in range(0,n_split):
+                    j_start,j_end = i*500+1, min((i+1)*(500)+1, len(start_scripts))
+                    last=True if i>=n_split-1 else False
+                    mscripts=start_scripts[j_start:j_end]
+                    start_list=f'start_list_lt{j_end:05d}.txt'
+                    write_startlist(start_list, mscripts)
+                    batch_job_name=f'batch_job_lt{j_end:05d}.slurm'
+                    write_slurm(batch_job_name, mscripts, start_list)
+                    write_compress()
+                    submit_name=f'submit_all_{j_end:05d}.sh'
+                    write_submit(submit_name,batch_job_name,last)
 
             standalone_runner = templateEnv.get_template('standalone.py')
             outputText = standalone_runner.render()
-            standalone_runner_path = f'{os.path.dirname(submit_sh_path)}/standalone.py'
+            runner_path = Path( bench_name_prefix, bench_config_name, instanceset_name)
+            standalone_runner_path = f'{os.path.dirname(runner_path)}/standalone.py'
             with open(standalone_runner_path, 'w') as fh:
                 fh.write(outputText)
 
-            st = os.stat(submit_sh_path)
-            os.chmod(submit_sh_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     if job_path is None or job_path == '':
         job_path = 'NO_FILE_GENERATED'
     print(f'Copperbench generated in total {num_tasks} task files.')
