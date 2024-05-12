@@ -75,6 +75,15 @@ echo $(cat /proc/cpuinfo  | egrep "^model name|^cache size" | head -2) >> node_i
 
 cat /proc/self/status | grep Cpus_allowed: >> node_info.log
 
+cpupower frequency-info >> node_info.log
+pushd /sys/devices/system/cpu
+paste <(cat cpu*/cpufreq/affected_cpus) <(cat cpu*/cpufreq/scaling_cur_freq) | column -s $'\t' -t
+popd
+
+echo "Testing CPU Frequency Scaling for 5s"
+timeout 5s perf  stat -o {{ shm_dir }}/output/perf_cycles.log -e cycles -I 1000 cat /dev/urandom > /dev/null
+echo "---DONE---"
+
 {%- if python_conda_env %}
 echo "c Activating Conda environment"
 if [ -d "$HOME/miniconda3/" ]; then

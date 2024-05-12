@@ -1,5 +1,7 @@
 #!/bin/bash
 #
 cd ~/{{ wd }}
-jid=$(sbatch --parsable batch_job.slurm)
+jid=$(sbatch --parsable {{ batch_job }})
+{%- if compress %}
 sbatch --dependency=afterany:${jid} compress_results.slurm
+{%- endif %}
