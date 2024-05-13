@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+NUM_JOBS_PER_NODE=$1
+ARRAY_ID=$2
+PAR_ID=$3
+AR=$((ARRAY_ID-1));
+JOB=$(($((AR*NUM_JOBS_PER_NODE))+PAR_ID));
+
+NUM_CMDS=$(awk 'END{print NR}' start_list.txt)
+
+if (( $JOB > $NUM_CMDS )); then
+   echo "Last job reached. Exiting"
+fi
+ 
+
+start=$( awk "NR==$JOB"  start_list.txt)
+echo $start
+exec $start
