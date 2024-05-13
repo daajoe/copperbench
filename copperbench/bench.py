@@ -65,7 +65,10 @@ class BenchConfig:
     instances_are_parameters: Optional[bool] = False
     data_to_main_mem = True
     chunks: Optional[int] = None
-
+    num_nodes: Optional[int] = 1
+    packed_job: Optional[bool] = False
+    num_par_tasks: Optional[bool] = 1
+    slurm_timeout: Optional[str] = None
 
 def main() -> None:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -93,10 +96,13 @@ def main() -> None:
     if bench_config.initial_seed is not None:
         random.seed(bench_config.initial_seed)
 
+    packed_job = bench_config.packed_job
     cpus = int(math.ceil(bench_config.request_cpus / (bench_config.cpus_per_node / bench_config.mem_lines))
                * (bench_config.cpus_per_node / bench_config.mem_lines))
     cache_lines = int(cpus / bench_config.mem_lines)
-
+    num_nodes = bench_config.num_nodes
+    num_par_tasks = bench_config.num_par_tasks
+    
     instance_conf = bench_config.instances
     instance_dict = {}
     if isinstance(instance_conf, str):
@@ -108,7 +114,7 @@ def main() -> None:
         instance_dict = instance_conf
 
     rs_time = bench_config.timeout + bench_config.slurm_time_buffer
-    slurm_time = rs_time + bench_config.runsolver_kill_delay
+    
     warn_large_task_num = bench_config.warn_large_task_num
     chunks = bench_config.chunks
 
@@ -371,6 +377,7 @@ def main() -> None:
             output_path = f"{os.environ['HOME']}/{os.path.relpath(os.path.abspath(bench_path))}/slurm_logs"
 
             def write_startlist(fname, scripts):
+                num_lines=0
                 with open(base_path/ fname, 'w') as file:
                     for p in scripts:
                         # hack: if we have a prefix, we need to cut the first folder
@@ -380,12 +387,22 @@ def main() -> None:
                         if bench_config_name:
                             idx = str(p).find(bench_config_name)
                             p = '/'.join(str(p).split('/')[1:])
+                        file.write(str(p) + '\n')
+                        num_lines+=1
                         file.write(str(os.path.relpath(p, start=base_path)) + '\n')
+                return num_lines
 
 
-            def write_slurm(fname, scripts, start_list):
-                slurm_template = templateEnv.get_template('batch_job.slurm.jinja2')
-                slurm_timeout = datetime.timedelta(seconds=slurm_time)
+            def write_slurm(fname, scripts, start_list,num_cmds):
+                # TODO: add flag for old array jobs
+                if not packed_job:
+                    slurm_template = templateEnv.get_template('batch_job.slurm.jinja2')
+                    slurm_time = rs_time + bench_config.runsolver_kill_delay
+                    slurm_timeout = datetime.timedelta(seconds=slurm_time)
+                else:
+                    slurm_template = templateEnv.get_template('batch_job_packing.slurm.jinja2')
+                    slurm_timeout = bench_config.slurm_timeout
+
                 mem_per_cpu = int(math.ceil(bench_config.mem_limit / cpus))
                 min_freq = bench_config.cpu_freq * 1000
                 max_freq = bench_config.cpu_freq * 1000
@@ -393,6 +410,8 @@ def main() -> None:
                 output_path = 'slurm_logs'
                 if not os.path.exists(output_path):
                     os.makedirs(base_path / output_path, exist_ok=True)
+                
+                num_jobs_by_node=math.ceil(num_cmds/num_nodes)
                 outputText = slurm_template.render(benchmark_name=instanceset_name, slurm_timeout=slurm_timeout,
                                                    partition=bench_config.partition, cpus_per_task=cpus,
                                                    mem_per_cpu=mem_per_cpu, email=bench_config.email,
@@ -404,10 +423,21 @@ def main() -> None:
                                                    max_parallel_jobs=bench_config.max_parallel_jobs,
                                                    lstart_scripts=len(scripts), exclusive=bench_config.exclusive,
                                                    bench_path=bench_path,
+                                                   num_nodes=2, num_par_tasks=num_par_tasks,
+                                                   num_jobs_by_node=num_jobs_by_node,
                                                    start_list=start_list)
+
                 with open(base_path/ fname, 'w') as fh:
                     fh.write(outputText)
 
+            def write_serial_wrapper(fname='doserial.sh'):
+                serial_template = templateEnv.get_template('doserial.sh.jinja2')
+                outputText = serial_template.render()
+                doserial_path=Path(bench_name_prefix, bench_config_name, instanceset_name, fname)
+                with open(doserial_path, 'w') as fh:
+                    fh.write(outputText)
+                st = os.stat(doserial_path)
+                os.chmod(doserial_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
             def write_compress():
                 compress_results_slurm = templateEnv.get_template('compress_results.slurm.jinja2')
@@ -431,8 +461,9 @@ def main() -> None:
                 
                         
             if chunks is None:
-                write_startlist('start_list.txt',start_scripts)
-                write_slurm('batch_job.slurm', start_scripts, 'start_list.txt')
+                num_cmds=write_startlist('start_list.txt',start_scripts)
+                write_slurm('batch_job.slurm', start_scripts, 'start_list.txt',num_cmds)
+                write_serial_wrapper()
                 write_compress()
                 write_submit('submit_all.sh','batch_job.slurm',True)
             else:

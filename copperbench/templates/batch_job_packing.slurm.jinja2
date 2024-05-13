@@ -1,0 +1,50 @@
+#!/bin/bash
+#
+#SBATCH --cpus-per-task={{ cpus_per_task }}
+#SBATCH --ntasks={{ num_par_tasks }}
+
+{%- if num_nodes is not none %}
+#SBATCH --array=1-{{ num_nodes }}
+#SBATCH --nodes={{ num_nodes }}
+{%- endif %}
+
+#SBATCH --job-name={{ benchmark_name }}
+#SBATCH --time={{ slurm_timeout }}
+#SBATCH --partition={{ partition }}
+
+#SBATCH --mem-per-cpu={{ mem_per_cpu }}
+{%- if email is not none %}
+#SBATCH --mail-user={{ email }}
+#SBATCH --mail-type=end
+{%- endif %}
+{%- if account is not none%}
+#SBATCH --account={{ account }}
+{%- endif %}
+{%- if cache_pinning %}
+#SBATCH --gres=cache:{{ cache_lines }}
+{%- endif %}
+#SBATCH --cpu-freq={{ min_freq }}-{{ max_freq }}:performance
+{%- if write_scheduler_logs is not none %}
+{#- environment variable HOME is required as absolute paths on HPC environments differ occasionally #}
+#SBATCH --output={{ output_path }}/slurm-%A_%a_%N_stdout.log
+#SBATCH --error={{ output_path }}/slurm-%A_%a_%N_stderr.log
+{%- else %}
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
+{%- endif %}
+
+{%- if exclusive %}:
+#SBATCH --exclusive
+{%- endif %}
+
+###SBATCH --nodes=2
+###SBATCH --ntasks=6
+###SBATCH --cpus-per-task=16
+###SBATCH --exclusive
+
+export OMP_NUM_THREADS=1
+CPUS={{ cpus_per_task }}
+
+cd ~/{{ bench_path }}
+parallel --env OMP_NUM_THREADS,PATH,LD_LIBRARY_PATH --joblog slurm_logs/slurm-${SLURM_JOBID}_${HOSTNAME}_par.log -P $SLURM_NTASKS -j $CPUS srun -N1 -c$CPUS -n1 --exact "./doserialjob {{ num_jobs_by_node }} $SLURM_ARRAY_TASK_ID {}" ::: {1..{{ num_jobs_by_node }}}
+
