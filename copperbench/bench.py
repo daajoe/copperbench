@@ -467,7 +467,7 @@ def main() -> None:
                     last = True if i >= n_split - 1 else False
                     mscripts = start_scripts[j_start:j_end]
                     start_list = f'start_list_lt{j_end:05d}.txt'
-                    write_startlist(start_list, mscripts)
+                    num_cmds = write_startlist(start_list, mscripts)
                     batch_job_name = f'batch_job_lt{j_end:05d}.slurm'
                     write_slurm(batch_job_name, mscripts, start_list, num_cmds)
                     write_compress()
