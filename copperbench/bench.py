@@ -393,7 +393,7 @@ def main() -> None:
                 return num_lines
 
 
-            def write_slurm(fname, scripts, start_list,num_cmds):
+            def write_slurm(fname, scripts, start_list, num_cmds):
                 # TODO: add flag for old array jobs
                 if not packed_job:
                     slurm_template = templateEnv.get_template('batch_job.slurm.jinja2')
@@ -410,8 +410,8 @@ def main() -> None:
                 output_path = 'slurm_logs'
                 if not os.path.exists(output_path):
                     os.makedirs(base_path / output_path, exist_ok=True)
-                
-                num_jobs_by_node=math.ceil(num_cmds/num_nodes)
+
+                num_jobs_by_node = math.ceil(num_cmds / num_nodes)
                 outputText = slurm_template.render(benchmark_name=instanceset_name, slurm_timeout=slurm_timeout,
                                                    partition=bench_config.partition, cpus_per_task=cpus,
                                                    mem_per_cpu=mem_per_cpu, email=bench_config.email,
