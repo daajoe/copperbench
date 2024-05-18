@@ -70,6 +70,7 @@ class BenchConfig:
     num_par_tasks: Optional[bool] = 1
     slurm_timeout: Optional[str] = None
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      description=f'copperbench (version {__version__})')
@@ -102,7 +103,7 @@ def main() -> None:
     cache_lines = int(cpus / bench_config.mem_lines)
     num_nodes = bench_config.num_nodes
     num_par_tasks = bench_config.num_par_tasks
-    
+
     instance_conf = bench_config.instances
     instance_dict = {}
     if isinstance(instance_conf, str):
@@ -114,7 +115,7 @@ def main() -> None:
         instance_dict = instance_conf
 
     rs_time = bench_config.timeout + bench_config.slurm_time_buffer
-    
+
     warn_large_task_num = bench_config.warn_large_task_num
     chunks = bench_config.chunks
 
@@ -145,7 +146,7 @@ def main() -> None:
             for e in bench_config.configs:
                 bench_config_dict[f'{bench_config.name}_{os.path.splitext(e)[0]}'] = e
         elif isinstance(bench_config.configs, dict):
-            for k,v in bench_config.configs.items():
+            for k, v in bench_config.configs.items():
                 if k == '':
                     print(f'...Skipping config "{k}": "{v}" (name empty).')
                     continue
@@ -154,7 +155,7 @@ def main() -> None:
                     continue
                 bench_config_dict[k] = v
 
-        num_tasks=0
+        num_tasks = 0
         for bench_config_name, benchmark_config in bench_config_dict.items():
             if os.path.isabs(benchmark_config):
                 config_path = benchmark_config
@@ -178,7 +179,7 @@ def main() -> None:
                 base_path = base_path / bench_config_name
 
             if not isinstance(instance_conf, str):
-                base_path = base_path / instanceset_name 
+                base_path = base_path / instanceset_name
 
             if os.path.exists(base_path):
                 if not bench_config.overwrite:
@@ -231,7 +232,7 @@ def main() -> None:
                             else:
                                 folder = False
                             path = m.group(2)
-                            
+
                             if os.path.isabs(os.path.expanduser(path)):
                                 path = Path(path)
                             else:
@@ -353,14 +354,13 @@ def main() -> None:
                                                            cmd_dir=os.path.dirname(cmd.split(' ')[0]),
                                                            starexec=bench_config.starexec_compatible,
                                                            python_conda_env=bench_config.python_conda_env)
-                        num_tasks+=1
+                        num_tasks += 1
                         if num_tasks > 1000 and warn_large_task_num:
                             print(f'WARNING: you already generated {num_tasks} tasks!!!')
                             if not query_yes_no('Do you want to proceed?', 'yes'):
                                 print('Exiting...')
                                 exit(4)
                             warn_large_task_num = False
-
 
                         with open(f"{job_path}", 'w') as fh:
                             fh.write(outputText)
@@ -372,26 +372,20 @@ def main() -> None:
             with open(base_path / 'metadata.json', 'w') as file:
                 file.write(json.dumps(metadata, indent=4))
 
-
             bench_path = bench_path = os.path.relpath(base_path, start=starthome)
             output_path = f"{os.environ['HOME']}/{os.path.relpath(os.path.abspath(bench_path))}/slurm_logs"
 
             def write_startlist(fname, scripts):
-                num_lines=0
-                with open(base_path/ fname, 'w') as file:
+                num_lines = 0
+                with open(base_path / fname, 'w') as file:
                     for p in scripts:
                         # hack: if we have a prefix, we need to cut the first folder
                         # if bench_name_prefix != '':
                         #     idx = str(p).find(bench_name_prefix)
                         #     p = '/'.join(str(p).split('/')[1:])
-                        if bench_config_name:
-                            idx = str(p).find(bench_config_name)
-                            p = '/'.join(str(p).split('/')[1:])
-                        file.write(str(p) + '\n')
-                        num_lines+=1
+                        num_lines += 1
                         file.write(str(os.path.relpath(p, start=base_path)) + '\n')
                 return num_lines
-
 
             def write_slurm(fname, scripts, start_list, num_cmds):
                 # TODO: add flag for old array jobs
@@ -427,13 +421,13 @@ def main() -> None:
                                                    num_jobs_by_node=num_jobs_by_node,
                                                    start_list=start_list)
 
-                with open(base_path/ fname, 'w') as fh:
+                with open(base_path / fname, 'w') as fh:
                     fh.write(outputText)
 
             def write_serial_wrapper(fname='doserial.sh'):
                 serial_template = templateEnv.get_template('doserial.sh.jinja2')
                 outputText = serial_template.render()
-                doserial_path=Path(bench_name_prefix, bench_config_name, instanceset_name, fname)
+                doserial_path = base_path / fname
                 with open(doserial_path, 'w') as fh:
                     fh.write(outputText)
                 st = os.stat(doserial_path)
@@ -441,7 +435,8 @@ def main() -> None:
 
             def write_compress():
                 compress_results_slurm = templateEnv.get_template('compress_results.slurm.jinja2')
-                outputText = compress_results_slurm.render(benchmark_name=instanceset_name, partition=bench_config.partition,
+                outputText = compress_results_slurm.render(benchmark_name=instanceset_name,
+                                                           partition=bench_config.partition,
                                                            bench_path=bench_path,
                                                            dir_prefix=f"{bench_config_name}",
                                                            write_scheduler_logs=bench_config.write_scheuler_logs,
@@ -449,36 +444,35 @@ def main() -> None:
                 with open(base_path / 'compress_results.slurm', 'w') as fh:
                     fh.write(outputText)
 
-            def write_submit(fname,batch_job,compress):
-                submit_sh_path = Path(base_path, instanceset_name, fname)
+            def write_submit(fname, batch_job, compress):
+                submit_sh_path = base_path / fname
                 submit_all = templateEnv.get_template('submit_all.sh.jinja2')
-                wd = os.path.relpath(Path(base_path, instanceset_name), start=starthome)
-                outputText = submit_all.render(wd=wd, compress=compress,batch_job=batch_job)
+                wd = os.path.relpath(base_path, start=starthome)
+                outputText = submit_all.render(wd=wd, compress=compress, batch_job=batch_job)
                 with open(submit_sh_path, 'w') as fh:
                     fh.write(outputText)
                 st = os.stat(submit_sh_path)
                 os.chmod(submit_sh_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-                
-                        
+
             if chunks is None:
-                num_cmds=write_startlist('start_list.txt',start_scripts)
-                write_slurm('batch_job.slurm', start_scripts, 'start_list.txt',num_cmds)
+                num_cmds = write_startlist('start_list.txt', start_scripts)
+                write_slurm('batch_job.slurm', start_scripts, 'start_list.txt', num_cmds)
                 write_serial_wrapper()
                 write_compress()
-                write_submit('submit_all.sh','batch_job.slurm',True)
+                write_submit('submit_all.sh', 'batch_job.slurm', True)
             else:
-                n_split = math.ceil(len(start_scripts)/chunks)
-                for i in range(0,n_split):
-                    j_start,j_end = i*500+1, min((i+1)*(500)+1, len(start_scripts))
-                    last=True if i>=n_split-1 else False
-                    mscripts=start_scripts[j_start:j_end]
-                    start_list=f'start_list_lt{j_end:05d}.txt'
+                n_split = math.ceil(len(start_scripts) / chunks)
+                for i in range(0, n_split):
+                    j_start, j_end = i * 500 + 1, min((i + 1) * (500) + 1, len(start_scripts))
+                    last = True if i >= n_split - 1 else False
+                    mscripts = start_scripts[j_start:j_end]
+                    start_list = f'start_list_lt{j_end:05d}.txt'
                     write_startlist(start_list, mscripts)
-                    batch_job_name=f'batch_job_lt{j_end:05d}.slurm'
-                    write_slurm(batch_job_name, mscripts, start_list)
+                    batch_job_name = f'batch_job_lt{j_end:05d}.slurm'
+                    write_slurm(batch_job_name, mscripts, start_list, num_cmds)
                     write_compress()
-                    submit_name=f'submit_all_{j_end:05d}.sh'
-                    write_submit(submit_name,batch_job_name,last)
+                    submit_name = f'submit_all_{j_end:05d}.sh'
+                    write_submit(submit_name, batch_job_name, last)
 
             standalone_runner = templateEnv.get_template('standalone.py')
             outputText = standalone_runner.render()
