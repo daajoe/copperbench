@@ -405,6 +405,13 @@ def main() -> None:
             with open(submit_sh_path, 'w') as fh:
                 fh.write(outputText)
 
+
+            standalone_runner = templateEnv.get_template('standalone.py')
+            outputText = standalone_runner.render()
+            standalone_runner_path = f'{os.path.dirname(submit_sh_path)}/standalone.py'
+            with open(standalone_runner_path, 'w') as fh:
+                fh.write(outputText)
+
             st = os.stat(submit_sh_path)
             os.chmod(submit_sh_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     if job_path is None or job_path == '':
@@ -412,3 +419,4 @@ def main() -> None:
     print(f'Copperbench generated in total {num_tasks} task files.')
     print(f'...Run all on slurm by executing all "submit_all.sh" files.')
     print(f'...Test setup by executing one "start.sh" (e.g. "{job_path}")')
+    print(f'...Run all on local machine by executing all "standalone.py"')
