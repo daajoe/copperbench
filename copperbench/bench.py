@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
+from .utils import query_yes_no
 
 import jinja2
 
@@ -59,6 +60,8 @@ class BenchConfig:
     write_scheuler_logs: Optional[bool] = True
     cmd_cwd: Optional[bool] = False
     starexec_compatible: Optional[bool] = False
+    python_conda_env: Optional[str] = None
+    warn_large_task_num: Optional[bool] = True
     instances_are_parameters: Optional[bool] = False
     data_to_main_mem = True
 
@@ -105,6 +108,7 @@ def main() -> None:
 
     rs_time = bench_config.timeout + bench_config.slurm_time_buffer
     slurm_time = rs_time + bench_config.runsolver_kill_delay
+    warn_large_task_num = bench_config.warn_large_task_num
 
     for instanceset_name, instancelist_filename in instance_dict.items():
         if (instanceset_name.startswith("%") or instanceset_name.startswith("#") or
@@ -135,13 +139,14 @@ def main() -> None:
         elif isinstance(bench_config.configs, dict):
             for k,v in bench_config.configs.items():
                 if k == '':
-                    print(f'Skipping config {k}: {v} (empty name).')
+                    print(f'...Skipping config "{k}": "{v}" (name empty).')
                     continue
                 elif k.startswith('#'):
-                    print(f'Skipping config {k}: {v} (starts with #).')
+                    print(f'...Skipping config "{k}": "{v}" (name starts with #).')
                     continue
                 bench_config_dict[k] = v
 
+        num_tasks=0
         for bench_config_name, benchmark_config in bench_config_dict.items():
             if os.path.isabs(benchmark_config):
                 config_path = benchmark_config
@@ -338,7 +343,17 @@ def main() -> None:
                                                            runsolver_kill_delay=bench_config.runsolver_kill_delay,
                                                            input_line=input_line, cmd_cwd=bench_config.cmd_cwd,
                                                            cmd_dir=os.path.dirname(cmd.split(' ')[0]),
-                                                           starexec=bench_config.starexec_compatible)
+                                                           starexec=bench_config.starexec_compatible,
+                                                           python_conda_env=bench_config.python_conda_env)
+                        num_tasks+=1
+                        if num_tasks > 1000 and warn_large_task_num:
+                            print(f'WARNING: you already generated {num_tasks} tasks!!!')
+                            if not query_yes_no('Do you want to proceed?', 'yes'):
+                                print('Exiting...')
+                                exit(4)
+                            warn_large_task_num = False
+
+
                         with open(f"{job_path}", 'w') as fh:
                             fh.write(outputText)
 
@@ -392,3 +407,8 @@ def main() -> None:
 
             st = os.stat(submit_sh_path)
             os.chmod(submit_sh_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    if job_path is None or job_path == '':
+        job_path = 'NO_FILE_GENERATED'
+    print(f'Copperbench generated in total {num_tasks} task files.')
+    print(f'...Run all on slurm by executing all "submit_all.sh" files.')
+    print(f'...Test setup by executing one "start.sh" (e.g. "{job_path}")')
